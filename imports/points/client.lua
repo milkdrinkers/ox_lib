@@ -8,6 +8,7 @@
 
 ---@class PointProperties
 ---@field coords vector3
+---@field map? integer
 ---@field distance number
 ---@field onEnter? fun(self: CPoint)
 ---@field onExit? fun(self: CPoint)
@@ -16,12 +17,19 @@
 
 ---@class CPoint : PointProperties
 ---@field id number
+---@field map integer
 ---@field currentDistance number
 ---@field isClosest? boolean
 ---@field remove fun()
 
----@type table<number, CPoint>
-local points = {}
+local currentMap = 0 ---@type MapId
+local pointIds = 0
+
+---@alias PointsList table<number, CPoint>
+---@alias MapsPointsList table<MapId, PointsList>
+
+---@type MapsPointsList
+local points = { [currentMap] = {} }
 ---@type CPoint[]
 local nearbyPoints = {}
 local nearbyCount = 0
@@ -30,6 +38,11 @@ local closestPoint
 local tick
 local lastCellX, lastCellY
 
+AddEventHandler('hol_maps:Client:Setmap', function(map)
+	currentMap = map
+    points[map] = points[map] or {}
+end)
+
 local function removePoint(self)
     if closestPoint?.id == self.id then
         closestPoint = nil
@@ -37,11 +50,11 @@ local function removePoint(self)
 
     lib.grid.removeEntry(self)
 
-    points[self.id] = nil
+    points[self.map][self.id] = nil
 end
 
 local function hasRemovePoint(entry)
-    return entry.remove == removePoint
+    return entry.remove == removePoint and entry.map == currentMap
 end
 
 CreateThread(function()
@@ -149,7 +162,8 @@ lib.points = {}
 ---@overload fun(coords: vector3, distance: number, data?: PointProperties): CPoint
 function lib.points.new(...)
     local args = { ... }
-    local id = #points + 1
+    pointIds += 1
+    local id = pointIds
     local self
 
     -- Support sending a single argument containing point data
@@ -175,14 +189,16 @@ function lib.points.new(...)
             self[k] = v
         end
     end
+    self.map = self.map or 0
 
     lib.grid.addEntry(self)
-    points[id] = self
+    points[self.map][id] = self
 
     return self
 end
 
-function lib.points.getAllPoints() return points end
+---@param map? MapId defaults to 0 (los santos)
+function lib.points.getAllPoints(map) return points[map or 0] end
 
 function lib.points.getNearbyPoints() return nearbyPoints end
 

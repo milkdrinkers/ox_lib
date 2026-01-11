@@ -67,6 +67,36 @@ function lib.grid.getCellPosition(point)
 end
 
 ---@param point vector
+---@param range? integer Range in cells (defaults to 1 = 3x3 grid, 2 = 5x5 grid, etc.)
+---@return table<vector2>
+function lib.grid.getCellPositions(point, range)
+    range = range or 1
+
+    local searchLength = yDelta * range
+    local searchWidth = xDelta * range
+    
+    local minX, maxX, minY, maxY = getGridDimensions(point, searchLength, searchWidth)
+    
+    local cellPositions = {}
+    
+    local cellsX = maxX - minX + 1
+    local cellsY = maxY - minY + 1
+    local totalCells = cellsX * cellsY
+    
+    for i = 0, totalCells - 1 do
+        local offsetX = i % cellsX
+        local offsetY = i // cellsX
+        
+        local x = minX + offsetX
+        local y = minY + offsetY
+        
+        cellPositions[i + 1] = vector2(x, y)
+    end
+    
+    return cellPositions
+end
+
+---@param point vector
 ---@return GridEntry[]
 function lib.grid.getCell(point)
     local x, y = lib.grid.getCellPosition(point)
@@ -82,47 +112,43 @@ end
 
 ---@param point vector
 ---@param filter? fun(entry: GridEntry): boolean
+---@param range? integer Range in cells (defaults to 1 = 3x3 grid, 2 = 5x5 grid, etc.)
 ---@return Array<GridEntry>
-function lib.grid.getNearbyEntries(point, filter)
-    local minX, maxX, minY, maxY = getGridDimensions(point, xDelta, yDelta)
-
+function lib.grid.getNearbyEntries(point, filter, range)
     if gridCache.filter == filter and
-        gridCache.minX == minX and
-        gridCache.maxX == maxX and
-        gridCache.minY == minY and
-        gridCache.maxY == maxY then
+        gridCache.range == range and
+        gridCache.point == point then
         return gridCache.entries
     end
 
+    local cellPositions = lib.grid.getCellPositions(point, range)
+
     local entries = lib.array:new()
     local n = 0
-
     table.wipe(entrySet)
 
-    for y = minY, maxY do
+    for i = 1, #cellPositions do
+        local cellPos = cellPositions[i]
+        local x, y = cellPos.x, cellPos.y
+        
         local row = grid[y]
-
-        for x = minX, maxX do
-            local cell = row and row[x]
-
-            if cell then
-                for j = 1, #cell do
-                    local entry = cell[j]
-
-                    if not entrySet[entry] and (not filter or filter(entry)) then
-                        n = n + 1
-                        entrySet[entry] = true
-                        entries[n] = entry
-                    end
+        local cell = row and row[x]
+        
+        if cell then
+            for j = 1, #cell do
+                local entry = cell[j]
+                
+                if not entrySet[entry] and (not filter or filter(entry)) then
+                    n = n + 1
+                    entrySet[entry] = true
+                    entries[n] = entry
                 end
             end
         end
     end
 
-    gridCache.minX = minX
-    gridCache.maxX = maxX
-    gridCache.minY = minY
-    gridCache.maxY = maxY
+    gridCache.point = point
+    gridCache.range = range
     gridCache.entries = entries
     gridCache.filter = filter
 
@@ -151,7 +177,7 @@ function lib.grid.addEntry(entry)
     end
 end
 
----@param entry table A table that was added to the grid previously.
+---@param entry { coords: vector, length: number, width: number } A table that was added to the grid previously.
 function lib.grid.removeEntry(entry)
     local minX, maxX, minY, maxY = getGridDimensions(entry.coords, entry.length, entry.width)
     local success = false
