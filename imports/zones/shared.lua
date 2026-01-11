@@ -9,6 +9,7 @@
 local glm = require 'glm'
 
 ---@class ZoneProperties
+---@field map? MapId
 ---@field debug? boolean
 ---@field debugColour? vector4
 ---@field onEnter fun(self: CZone)?
@@ -18,14 +19,27 @@ local glm = require 'glm'
 
 ---@class CZone : PolyZone, BoxZone, SphereZone
 ---@field id number
+---@field map MapId
 ---@field __type 'poly' | 'sphere' | 'box'
 ---@field remove fun(self: self)
 ---@field setDebug fun(self: CZone, enable?: boolean, colour?: vector)
 ---@field contains fun(self: CZone, coords?: vector3, updateDistance?: boolean): boolean
 
----@type table<number, CZone>
-local Zones = {}
+local currentMap = 0 ---@type MapId
+local zoneIds = 0
+
+---@alias MapId integer
+---@alias ZonesList table<number, CZone>
+---@alias MapsZonesList table<MapId, ZonesList>
+
+---@type MapsZonesList
+local Zones = { [currentMap] = {} }
 _ENV.Zones = Zones
+
+AddEventHandler('hol_maps:Client:Setmap', function(map)
+	currentMap = map
+    Zones[map] = Zones[map] or {}
+end)
 
 local function nextFreePoint(points, b, len)
     for i = 1, len do
@@ -114,7 +128,7 @@ local tick
 
 ---@param zone CZone
 local function removeZone(zone)
-    Zones[zone.id] = nil
+	Zones[zone.map][zone.id] = nil
 
     lib.grid.removeEntry(zone)
 
@@ -138,7 +152,7 @@ CreateThread(function()
 
     while true do
         local coords = GetEntityCoords(cache.ped)
-        local zones = lib.grid.getNearbyEntries(coords, function(entry) return entry.remove == removeZone end) --[[@as Array<CZone>]]
+        local zones = lib.grid.getNearbyEntries(coords, function(entry) return entry.remove == removeZone and entry.map == currentMap end) --[[@as Array<CZone>]]
         local cellX, cellY = lib.grid.getCellPosition(coords)
         cache.coords = coords
 
@@ -343,6 +357,7 @@ local function setZone(data)
     ---@cast data CZone
     data.remove = removeZone
     data.contains = data.contains or contains
+    data.map = data.map or 0
 
     if lib.context == 'client' then
         local coords = cache.coords or GetEntityCoords(cache.ped)
@@ -358,7 +373,7 @@ local function setZone(data)
         data.debug = nil
     end
 
-    Zones[data.id] = data
+	Zones[data.map][data.id] = data
     lib.grid.addEntry(data)
 
     return data
@@ -373,7 +388,8 @@ lib.zones = {}
 ---@param data PolyZone
 ---@return CZone
 function lib.zones.poly(data)
-    data.id = #Zones + 1
+    zoneIds += 1
+    data.id = zoneIds
     data.thickness = data.thickness or 4
 
     local pointN = #data.points
@@ -455,7 +471,8 @@ end
 ---@param data BoxZone
 ---@return CZone
 function lib.zones.box(data)
-    data.id = #Zones + 1
+    zoneIds += 1
+    data.id = zoneIds
     data.coords = convertToVector(data.coords)
     data.size = data.size and convertToVector(data.size) / 2 or vec3(2)
     data.thickness = data.size.z * 2
@@ -480,7 +497,8 @@ end
 ---@param data SphereZone
 ---@return CZone
 function lib.zones.sphere(data)
-    data.id = #Zones + 1
+    zoneIds += 1
+    data.id = zoneIds
     data.coords = convertToVector(data.coords)
     data.radius = (data.radius or 2) + 0.0
     data.__type = 'sphere'
@@ -489,7 +507,8 @@ function lib.zones.sphere(data)
     return setZone(data)
 end
 
-function lib.zones.getAllZones() return Zones end
+---@param map? MapId defaults to 0 (los santos)
+function lib.zones.getAllZones(map) return Zones[map or 0] end
 
 function lib.zones.getCurrentZones() return insideZones end
 
